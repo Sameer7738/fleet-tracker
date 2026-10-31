@@ -3,6 +3,7 @@
   "builds": [
     { "src": "api/**/*.js", "use": "@vercel/node" },
     { "src": "index.html", "use": "@vercel/static" },
+    { "src": "app.js", "use": "@vercel/static" },
     { "src": "manifest.webmanifest", "use": "@vercel/static" },
     { "src": "sw.js", "use": "@vercel/static" }
   ],
@@ -12,6 +13,7 @@
     { "src": "/api/lookup", "dest": "/api/lookup.js" },
     { "src": "/api/health", "dest": "/api/health.js" },
     { "src": "/api/export", "dest": "/api/export.js" },
+    { "src": "/app.js", "dest": "/app.js" },
     { "src": "/manifest.webmanifest", "dest": "/manifest.webmanifest" },
     { "src": "/sw.js", "dest": "/sw.js" },
     { "src": "/(.*)", "dest": "/index.html" }
