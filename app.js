@@ -1,12 +1,21 @@
 const COLORS=["#e4572e","#1b7fbd","#8a4fd6","#1f9d55","#d98e04","#c2185b","#00838f","#6d4c41"];
-const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&","<":"<",">":">",'"':""","'":"&#39;"}[c]));
 let fleet=[],events={},serverLast={},serverState={},settings={},audit=[],health=null;
 const markers={},trails={},latest={},trailPts={};
 let colorIdx=0,selected=null,updating=false,fitted=false,view="map",pw=localStorage.getItem("fleet_pw")||"";
 let pbTimer=null,pbIdx=0;
 const darkMap=window.matchMedia("(prefers-color-scheme: dark)").matches;
 const map=L.map("map",{worldCopyJump:true}).setView([30,-40],3);
-L.tileLayer(darkMap?"https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png":"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"&copy; OSM / CARTO"}).addTo(map);
+// Free OSM tiles only (Carto now requires API keys)
+const tiles=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+  maxZoom:19,
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}).addTo(map);
+if(darkMap){
+  const style=document.createElement("style");
+  style.textContent="#map .leaflet-tile-pane{filter:brightness(.72) contrast(1.05) saturate(.85) hue-rotate(180deg) invert(1)} #map .leaflet-container{background:#0b1218}";
+  document.head.appendChild(style);
+}
 function headers(json){const h={};if(json)h["Content-Type"]="application/json";if(pw)h["X-Fleet-Password"]=pw;return h}
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{...headers(!!opts.body),...(opts.headers||{})}});const ct=r.headers.get("content-type")||"";if(ct.includes("text/csv"))return r;const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`Request failed (${r.status})`);return data}
 const say=(t,err)=>{const m=document.getElementById("msg");m.textContent=t||"";m.className=err?"err":""};
@@ -23,7 +32,7 @@ let info=live?`${alt} · ${p.gs!=null?Math.round(p.gs)+" kt":"–"} · ${p.track
 const tags=(a.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("");let more="";
 if(selected===a.hex){const ev=events[a.hex]||[];const filterType=document.getElementById("evFilter")?.value||"";const shown=filterType?ev.filter(e=>e.label.toLowerCase().includes(filterType.toLowerCase())):ev;
 more+=`<div style="margin-top:6px"><select id="evFilter" style="font-size:12px;padding:4px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink)"><option value="">All events</option><option value="taxi">Taxi</option><option value="Took off">Takeoff</option><option value="Landed">Landing</option><option value="offline">Offline</option></select> <a class="btn ghost" style="display:inline-block;padding:4px 8px;font-size:12px;text-decoration:none" href="/api/export?hex=${a.hex}">CSV</a></div>`;
-more+=`<ul class="log">${shown.length?shown.map(e=>`<li><time>${new Date(e.t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit"})}</time><span>${esc(e.label)}</span>${fmtCoords(e)?`<div class="coords">${esc(fmtCoords(e))}</div>`:""}</li>`).join(""):"<li>No events yet</li>"}</ul><div class="note">Server records timeline 24/7 when polling is configured.</div>`}
+more+=`<ul class="log">${shown.length?shown.map(e=>`<li><time>${new Date(e.t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit"})}</time><span>${esc(e.label)}</span>${fmtCoords(e)?`<div class="coords">${esc(fmtCoords(e))}</div>`:""}</li>`).join(""):"<li>No events yet</li>"}</ul><div class="note">Timeline is saved on the server (works even if you close this tab).</div>`}
 return `<div class="ac${live?" live":""}${selected===a.hex?" sel":""}" data-hex="${a.hex}"><button class="rm" data-rm="${a.hex}" title="Remove">×</button><b><span class="dot"></span>${esc(a.name)}${tags}</b><p>${info}${more}<br><a href="https://globe.adsbexchange.com/?icao=${a.hex.toLowerCase()}" target="_blank" rel="noopener">ADS-B Exchange</a></p></div>`}).join("")||`<div class="note" style="padding:12px">No aircraft match.</div>`;
 panel.querySelectorAll(".ac").forEach(el=>el.onclick=e=>{if(e.target.closest("a,button,select"))return;select(el.dataset.hex,true)});
 panel.querySelectorAll("[data-rm]").forEach(btn=>btn.onclick=e=>{e.stopPropagation();remove(btn.dataset.rm)});
@@ -43,7 +52,7 @@ document.getElementById("pbPlay").onclick=()=>{if(!selected)return;const pts=tra
 function openModal(title,bodyHtml,onSave){document.getElementById("modalTitle").textContent=title;document.getElementById("modalBody").innerHTML=bodyHtml;document.getElementById("modal").classList.add("on");document.getElementById("modalSave").style.display=onSave?"inline-block":"none";document.getElementById("modalSave").onclick=async()=>{if(onSave)await onSave();document.getElementById("modal").classList.remove("on")}};
 document.getElementById("modalCancel").onclick=()=>document.getElementById("modal").classList.remove("on");
 document.getElementById("btnSettings").onclick=()=>{openModal("Settings",`<label>Shared password (if set on server)</label><input id="s_pw" type="password" value="${esc(pw)}" placeholder="Optional"><label>Taxi threshold (kt)</label><input id="s_taxi" type="number" value="${settings.taxiKt??3}"><label>Offline after (minutes)</label><input id="s_off" type="number" value="${settings.offlineMin??5}"><label>Webhook URL (alerts)</label><input id="s_hook" type="url" placeholder="https://…" value=""><p class="note">Webhook receives JSON on takeoff/landing/taxi/offline. Password stays in this browser only.</p>`,async()=>{pw=document.getElementById("s_pw").value;localStorage.setItem("fleet_pw",pw);try{await api("/api/fleet",{method:"POST",body:JSON.stringify({action:"settings",taxiKt:+document.getElementById("s_taxi").value||3,offlineMin:+document.getElementById("s_off").value||5,webhookUrl:document.getElementById("s_hook").value||undefined})});say("Settings saved");await bootstrap()}catch(e){say(e.message,true)}})};
-document.getElementById("btnHealth").onclick=async()=>{let h={};try{h=await api("/api/health")}catch(e){h={ok:false,error:e.message}}openModal("System health",`<p><strong>Status:</strong> ${h.ok?"OK":"Issue"}</p><p><strong>Storage:</strong> ${esc(h.storage||"—")}</p><p><strong>Fleet size:</strong> ${h.fleetCount??"—"}</p><p><strong>Last poll:</strong> ${h.lastPoll?.lastPoll?new Date(h.lastPoll.lastPoll).toLocaleString():"never"}</p><p><strong>Webhook configured:</strong> ${h.hasWebhook?"yes":"no"}</p><p><strong>Auth required:</strong> ${h.authRequired?"yes":"no"}</p>${h.error?`<p style="color:var(--err)">${esc(h.error)}</p>`:""}<p class="note">For 24/7 tracking: set GITHUB_TOKEN on Vercel and call /api/poll every 1–2 min with CRON_SECRET.</p><p class="note">Recent audit: ${(audit||[]).slice(0,5).map(a=>esc(a.action)+" @ "+new Date(a.t).toLocaleString()).join("<br>")||"none"}</p>`,null)};
+document.getElementById("btnHealth").onclick=async()=>{let h={};try{h=await api("/api/health")}catch(e){h={ok:false,error:e.message}}openModal("System health",`<p><strong>Status:</strong> ${h.ok?"OK":"Issue"}</p><p><strong>Storage:</strong> ${esc(h.storage||"—")}</p><p><strong>Fleet size:</strong> ${h.fleetCount??"—"}</p><p><strong>Last poll:</strong> ${h.lastPoll?.lastPoll?new Date(h.lastPoll.lastPoll).toLocaleString():"never"}</p><p><strong>Webhook configured:</strong> ${h.hasWebhook?"yes":"no"}</p><p><strong>Auth required:</strong> ${h.authRequired?"yes":"no"}</p>${h.error?`<p style="color:var(--err)">${esc(h.error)}</p>`:""}<p class="note">Storage is persistent. Background poll runs hourly; open this page for faster 10s updates.</p><p class="note">Recent audit: ${(audit||[]).slice(0,5).map(a=>esc(a.action)+" @ "+new Date(a.t).toLocaleString()).join("<br>")||"none"}</p>`,null)};
 document.getElementById("btnExport").onclick=()=>{location.href="/api/export"+(selected?`?hex=${selected}`:"")};
 document.getElementById("go").onclick=addAircraft;
 document.getElementById("q").addEventListener("keydown",e=>{if(e.key==="Enter")addAircraft()});
