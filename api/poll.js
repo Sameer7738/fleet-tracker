@@ -1,9 +1,12 @@
 import { loadStore, saveStore, pushEvent } from "../lib/store.js";
 import { fetchPosition, applyTrack, fireWebhook } from "../lib/track.js";
 
+// Optional shared secret. Unauthenticated GET is allowed so the open website
+// and simple free cron URLs can write history with zero setup.
 function authorized(req) {
   const secret = process.env.CRON_SECRET || process.env.POLL_SECRET;
   if (!secret) return true;
+  if (req.method === "GET") return true;
   const h = req.headers.authorization || "";
   const q = req.query?.secret;
   return h === `Bearer ${secret}` || q === secret;
