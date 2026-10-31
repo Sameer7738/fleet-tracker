@@ -1,22 +1,27 @@
-import { loadStore, storageMode } from "../lib/store.js";
+import { loadStore } from "../lib/store.js";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "no-store");
   const out = {
     ok: true,
     time: new Date().toISOString(),
-    storage: storageMode(),
+    storage: "unknown",
     lastPoll: null,
-    persistent: storageMode() === "github"
+    persistent: false
   };
   try {
     const store = await loadStore();
+    out.storage = store._backend || "ok";
+    out.persistent = !store._readonly && store._backend === "jstash";
     out.fleetCount = store.fleet?.length || 0;
     out.lastPoll = store._health || null;
     out.hasWebhook = !!(store.settings?.webhookUrl);
     out.authRequired = !!process.env.FLEET_PASSWORD;
-    if (!out.persistent) {
-      out.warning = "GITHUB_TOKEN not set — events are in-memory only and reset on cold start. Add a PAT for 24/7 history.";
+    if (store._readonly) {
+      out.warning = store._error || "Read-only storage mode";
+    } else if (out.persistent) {
+      out.warning = null;
     }
   } catch (e) {
     out.ok = false;
