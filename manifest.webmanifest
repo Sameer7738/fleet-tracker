@@ -1,0 +1,9 @@
+{
+  "name": "Fleet tracker",
+  "short_name": "Fleet",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1a21",
+  "theme_color": "#1b6fd1",
+  "description": "24/7 aircraft fleet tracking with taxi, takeoff and landing timeline"
+}
