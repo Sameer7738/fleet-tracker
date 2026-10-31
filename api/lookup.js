@@ -2,16 +2,11 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Cache-Control", "s-maxage=3, stale-while-revalidate=8");
-
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
+  if (req.method === "OPTIONS") return res.status(204).end();
 
   const kind = String(req.query.kind || "hex").toLowerCase();
   const value = String(req.query.value || "").trim().toLowerCase();
-  if (!value) {
-    return res.status(400).json({ error: "Missing value", ac: null, answered: 0, total: 0 });
-  }
+  if (!value) return res.status(400).json({ error: "Missing value", ac: null, answered: 0, total: 0 });
 
   const paths =
     kind === "hex" ? ["hex"] :
@@ -19,11 +14,7 @@ export default async function handler(req, res) {
     kind === "reg" || kind === "registration" ? ["reg", "registration"] :
     ["hex", "callsign", "reg"];
 
-  const bases = [
-    "https://api.adsb.lol/v2",
-    "https://opendata.adsb.fi/api/v2"
-  ];
-
+  const bases = ["https://api.adsb.lol/v2", "https://opendata.adsb.fi/api/v2"];
   const jobs = [];
   for (const b of bases) {
     for (const p of paths) {
@@ -40,12 +31,9 @@ export default async function handler(req, res) {
       );
     }
   }
-
-  if (kind === "hex" || (kind === "any" && /^[0-9a-f]{6}$/i.test(value))) {
+  if (kind === "hex" || /^[0-9a-f]{6}$/i.test(value)) {
     jobs.push(
-      fetch(`https://opensky-network.org/api/states/all?icao24=${encodeURIComponent(value)}`, {
-        signal: AbortSignal.timeout(8000)
-      })
+      fetch(`https://opensky-network.org/api/states/all?icao24=${encodeURIComponent(value)}`, { signal: AbortSignal.timeout(8000) })
         .then(async r => {
           if (!r.ok) return null;
           const d = await r.json();
@@ -73,14 +61,6 @@ export default async function handler(req, res) {
   const answered = results.filter(r => r !== null).length;
   const all = results.flat().filter(a => a && a.lat != null && a.lon != null);
   all.sort((a, b) => (a.seen_pos ?? a.seen ?? 99) - (b.seen_pos ?? b.seen ?? 99));
-
-  if (!answered) {
-    return res.status(502).json({ error: "Data sources unreachable", ac: null, answered: 0, total: jobs.length });
-  }
-
-  return res.status(200).json({
-    ac: all[0] || null,
-    answered,
-    total: jobs.length
-  });
+  if (!answered) return res.status(502).json({ error: "Data sources unreachable", ac: null, answered: 0, total: jobs.length });
+  return res.status(200).json({ ac: all[0] || null, answered, total: jobs.length });
 }
